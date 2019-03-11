@@ -1,0 +1,4 @@
+RE:
+Error: ValidationError: machines/.*
+  Circular prerequisite dependency detected!
+  badbark -> badbaz -> badbar -> badfoo -> badbaz

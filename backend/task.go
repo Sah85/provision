@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"strings"
 	"sync"
 	"text/template"
 
@@ -20,6 +21,36 @@ type Task struct {
 // SetReadOnly sets the ReadOnly flag.
 func (t *Task) SetReadOnly(b bool) {
 	t.ReadOnly = b
+}
+
+func (t *Task) cleanedPrereqs(rt *RequestTracker, e *models.Error, seen []string) []string {
+	if len(t.Prerequisites) == 0 {
+		return []string{}
+	}
+	seenMap := map[string]struct{}{}
+	for _, s := range seen {
+		seenMap[s] = struct{}{}
+	}
+	if _, ok := seenMap[t.Name]; ok {
+		e.Errorf("Circular prerequisite dependency detected!")
+		e.Errorf("%v -> %v", strings.Join(seen, " -> "), t.Name)
+		return nil
+	}
+	res := []string{}
+	for _, prereq := range t.Prerequisites {
+		pq := rt.find("tasks", prereq)
+		if pq == nil {
+			e.Errorf("Task %s missing prerequisite %s", t.Name, prereq)
+			return nil
+		}
+		prereqs := AsTask(pq).cleanedPrereqs(rt, e, append(seen, t.Name))
+		if prereqs == nil {
+			// e already has relavent error information
+			return nil
+		}
+		res = append(res, prereqs...)
+	}
+	return append(res, t.Prerequisites...)
 }
 
 // SaveClean clears validation and returns the object as a KeySaver.
@@ -91,12 +122,16 @@ func (t *Task) genRoot(common *template.Template, e models.ErrorAdder) *template
 // referencing stages.
 func (t *Task) Validate() {
 	t.Task.Validate()
-
 	t.rt.dt.tmplMux.Lock()
 	t.tmplMux.Lock()
 	root := t.genRoot(t.rt.dt.rootTemplate, t)
 	t.rt.dt.tmplMux.Unlock()
 	t.SetValid()
+	for _, prereq := range t.Prerequisites {
+		if t.rt.find("tasks", prereq) == nil {
+			t.Errorf("Prerequisite task %s is missing", prereq)
+		}
+	}
 	if t.Useable() {
 		t.rootTemplate = root
 		t.SetAvailable()

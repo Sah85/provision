@@ -1,0 +1,4 @@
+RE:
+Error: ValidationError:.*
+  Circular prerequisite dependency detected!
+  badfoo -> badbaz -> badbar -> badfoo
